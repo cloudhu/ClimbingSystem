@@ -102,8 +102,21 @@ void AClimbingSystemCharacter::SetupPlayerInputComponent(UInputComponent* Player
 
 void AClimbingSystemCharacter::Move(const FInputActionValue& Value)
 {
+	if (!CustomMovement)return;
+	if (CustomMovement->IsClimbing())
+	{
+		HandleClimbMoveInput(Value);
+	}
+	else
+	{
+		HandleGroundMoveInput(Value);
+	}
+}
+
+void AClimbingSystemCharacter::HandleGroundMoveInput(const FInputActionValue& Value)
+{
 	// input is a Vector2D
-	FVector2D MovementVector = Value.Get<FVector2D>();
+	const FVector2D MovementVector = Value.Get<FVector2D>();
 
 	if (Controller != nullptr)
 	{
@@ -123,6 +136,20 @@ void AClimbingSystemCharacter::Move(const FInputActionValue& Value)
 	}
 }
 
+void AClimbingSystemCharacter::HandleClimbMoveInput(const FInputActionValue& Value)
+{
+	// input is a Vector2D
+	const FVector2D MovementVector = Value.Get<FVector2D>();
+
+	const FVector ForwardDirection=FVector::CrossProduct(-CustomMovement->GetClimbableSurfaceNormal(),GetActorRightVector());
+
+	const FVector RightDirection=FVector::CrossProduct(-CustomMovement->GetClimbableSurfaceNormal(), -GetActorUpVector());
+	
+	// add movement 
+	AddMovementInput(ForwardDirection, MovementVector.Y);
+	AddMovementInput(RightDirection, MovementVector.X);
+}
+
 void AClimbingSystemCharacter::Look(const FInputActionValue& Value)
 {
 	// input is a Vector2D
@@ -138,4 +165,6 @@ void AClimbingSystemCharacter::Look(const FInputActionValue& Value)
 
 void AClimbingSystemCharacter::OnClimbStarted(const FInputActionValue& Value)
 {
+	if (!CustomMovement)return;
+	CustomMovement->ToggleClimbing(!CustomMovement->IsClimbing());
 }

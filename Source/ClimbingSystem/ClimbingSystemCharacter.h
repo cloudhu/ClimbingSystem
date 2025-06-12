@@ -57,6 +57,18 @@ private:
 
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
+	
+	/**
+	 * 处理地面时的运动输入
+	 * @param Value input
+	 */
+	void HandleGroundMoveInput(const FInputActionValue& Value);
+	
+	/**
+	 * 处理攀爬时的运动输入
+	 * @param Value input
+	 */
+	void HandleClimbMoveInput(const FInputActionValue& Value);
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
