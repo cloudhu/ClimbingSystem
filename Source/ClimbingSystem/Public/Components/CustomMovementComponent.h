@@ -6,6 +6,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "CustomMovementComponent.generated.h"
 
+// class UAnimMontage;
 UENUM()
 namespace ECustomMovementMode
 {
@@ -51,6 +52,10 @@ class CLIMBINGSYSTEM_API UCustomMovementComponent : public UCharacterMovementCom
 
 	void SnapMovementToClimbableSurfaces(float DeltaTime) const;
 
+	void PlayClimbMontage(UAnimMontage* MontageToPlay) const;
+
+	UFUNCTION()
+	void OnClimMontageEnded(UAnimMontage* MontageToPlay,bool bInterrupted);
 #pragma endregion
 
 #pragma region ClimbCoreVars
@@ -61,6 +66,9 @@ class CLIMBINGSYSTEM_API UCustomMovementComponent : public UCharacterMovementCom
 
 	FVector CurrentClimbableSurfaceNormal;
 
+	UPROPERTY()
+	UAnimInstance* OwningPlayerAnimInstance;
+	
 #pragma endregion
 
 #pragma region OverrideFuctions
@@ -76,6 +84,10 @@ protected:
 
 	virtual float GetMaxAcceleration() const override;
 
+public:
+	virtual void BeginPlay() override;
+
+protected:
 #pragma endregion
 
 public:
@@ -85,6 +97,7 @@ public:
 
 	FORCEINLINE FVector GetClimbableSurfaceNormal() const { return CurrentClimbableSurfaceNormal; }
 
+	FVector GetUnrotatedClimbVelocity()const;
 #pragma region BlueprintVars
 
 private:
@@ -106,5 +119,8 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CharacterMovement:Climbing", meta=(AllowPrivateAccess=true))
 	float MaxClimbMaxAcceleration = 300.f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CharacterMovement:Climbing", meta=(AllowPrivateAccess=true))
+	UAnimMontage* IdleToClimbMontage;
+	
 #pragma endregion
 };

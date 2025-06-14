@@ -6,6 +6,7 @@
 #include "ClimbingSystem/ClimbingSystemCharacter.h"
 #include "ClimbingSystem/DebugHelper.h"
 #include "Components/CapsuleComponent.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 
 TArray<FHitResult> UCustomMovementComponent::DoCapsuleTraceMultiForObjects(const FVector& Start, const FVector& End, const bool bShowDebugShape,
@@ -211,6 +212,23 @@ void UCustomMovementComponent::SnapMovementToClimbableSurfaces(const float Delta
 	UpdatedComponent->MoveComponent(SnapVector * DeltaTime * MaxClimbSpeed, UpdatedComponent->GetComponentQuat(), true);
 }
 
+void UCustomMovementComponent::PlayClimbMontage(UAnimMontage* MontageToPlay) const
+{
+	if (!MontageToPlay || !OwningPlayerAnimInstance)return;
+	if (OwningPlayerAnimInstance->IsAnyMontagePlaying())return;
+
+	OwningPlayerAnimInstance->Montage_Play(MontageToPlay);
+}
+
+void UCustomMovementComponent::OnClimMontageEnded(UAnimMontage* MontageToPlay, bool bInterrupted)
+{
+	// Debug::Print("Climb Montage ended");
+	if (MontageToPlay == IdleToClimbMontage)
+	{
+		StartClimbing();
+	}
+}
+
 void UCustomMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
 {
 	if (IsClimbing())
@@ -249,6 +267,18 @@ float UCustomMovementComponent::GetMaxAcceleration() const
 	return Super::GetMaxAcceleration();
 }
 
+void UCustomMovementComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	OwningPlayerAnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
+	if (OwningPlayerAnimInstance)
+	{
+		OwningPlayerAnimInstance->OnMontageEnded.AddDynamic(this, &UCustomMovementComponent::OnClimMontageEnded);
+		OwningPlayerAnimInstance->OnMontageBlendingOut.AddDynamic(this, &UCustomMovementComponent::OnClimMontageEnded);
+	}
+}
+
 void UCustomMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -263,7 +293,7 @@ void UCustomMovementComponent::ToggleClimbing(bool bEnableClimb)
 		{
 			//Enter the climb state
 			// Debug::Print("Can start climb");
-			StartClimbing();
+			PlayClimbMontage(IdleToClimbMontage);
 		}
 		// else
 		// {
@@ -282,4 +312,7 @@ bool UCustomMovementComponent::IsClimbing() const
 	return MovementMode == MOVE_Custom && CustomMovementMode == ECustomMovementMode::MOVE_Climb;
 }
 
-
+FVector UCustomMovementComponent::GetUnrotatedClimbVelocity() const
+{
+	return UKismetMathLibrary::Quat_UnrotateVector(UpdatedComponent->GetComponentQuat(), Velocity);
+}
