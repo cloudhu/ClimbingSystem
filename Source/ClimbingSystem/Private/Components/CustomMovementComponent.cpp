@@ -37,7 +37,7 @@ TArray<FHitResult> UCustomMovementComponent::DoCapsuleTraceMultiForObjects(const
 	return OutHitResults;
 }
 
-FHitResult UCustomMovementComponent::DoLineTraceMultiForObject(const FVector& Start, const FVector& End, bool bShowDebugShape, bool bDrawPersistantShapes) const
+FHitResult UCustomMovementComponent::DoLineTraceSingleForObject(const FVector& Start, const FVector& End, bool bShowDebugShape, bool bDrawPersistantShapes) const
 {
 	FHitResult OutHitResult;
 
@@ -83,7 +83,7 @@ FHitResult UCustomMovementComponent::TraceFromEyeHeight(const float TraceDistanc
 	const FVector EyeHeightOffset = UpdatedComponent->GetUpVector() * (CharacterOwner->BaseEyeHeight + TraceStartOffset);
 	const FVector Start = ComponentLocation + EyeHeightOffset;
 	const FVector End = Start + UpdatedComponent->GetForwardVector() * TraceDistance;
-	return DoLineTraceMultiForObject(Start, End);
+	return DoLineTraceSingleForObject(Start, End, true);
 }
 
 bool UCustomMovementComponent::CanStartClimbing()
@@ -109,8 +109,9 @@ void UCustomMovementComponent::PhysClimb(const float DeltaTime, int32 Iterations
 	TraceClimbableSurfaces();
 
 	ProcessClimbableSurfaceInfo();
+
 	//检查是否应该停止攀爬
-	if (CheckShouldStopClimbing())
+	if (CheckShouldStopClimbing() || CheckHasReachedFloor())
 	{
 		StopClimbing();
 	}
@@ -146,6 +147,15 @@ void UCustomMovementComponent::PhysClimb(const float DeltaTime, int32 Iterations
 
 	//使攀爬时的动作贴合可攀爬物体表面
 	SnapMovementToClimbableSurfaces(DeltaTime);
+
+	if (CheckHasReachedLedge())
+	{
+		Debug::Print("Ledge Reached", FColor::Green, 1);
+	}
+	else
+	{
+		Debug::Print("Ledge NOT Reached", FColor::Red, 1);
+	}
 }
 
 void UCustomMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
@@ -185,9 +195,56 @@ bool UCustomMovementComponent::CheckShouldStopClimbing() const
 
 	//计算可攀爬表面与向上方向的点乘，从而判断角色和水平面的相对夹角，当角色和水平面平行时角度为0，当角色垂直时角度为90
 	const float DotResult = FVector::DotProduct(CurrentClimbableSurfaceNormal, FVector::UpVector);
-	const float DegreeDiff = FMath::RadiansToDegrees(FMath::Acos(DotResult));
-	if (DegreeDiff <= 60.f)return true;
+	if (const float DegreeDiff = FMath::RadiansToDegrees(FMath::Acos(DotResult)); DegreeDiff <= 60.f)return true;
 	// Debug::Print("Climb, DegreeDiff: %f", DegreeDiff, FColor::Green, 1);
+	return false;
+}
+
+bool UCustomMovementComponent::CheckHasReachedFloor() const
+{
+	//如果角色往上爬，则不需要检测地面
+	if (GetUnrotatedClimbVelocity().Z > -10.f)return false;
+	//获取角色朝下的向量（向上的向量取反）
+	const FVector DownVector = -UpdatedComponent->GetUpVector();
+	//起点偏移
+	const FVector StartOffset = DownVector * 80.f;
+	//计算起止点
+	const FVector Start = UpdatedComponent->GetComponentLocation() + StartOffset;
+	const FVector End = Start + DownVector;
+
+	//进行碰撞检测，找到可能存在的地面
+	TArray<FHitResult> PossibleFloorHits = DoCapsuleTraceMultiForObjects(Start, End);
+	if (PossibleFloorHits.IsEmpty())return false;
+
+	for (const FHitResult& HitResult : PossibleFloorHits)
+	{
+		if (FVector::Parallel(-HitResult.ImpactNormal, FVector::UpVector))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UCustomMovementComponent::CheckHasReachedLedge() const
+{
+	//如果是往下爬，则不需要检测是否爬到顶部边缘
+	// Debug::Print(TEXT("GetUnrotatedClimbVelocity.Z = %f"), GetUnrotatedClimbVelocity().Z, FColor::Blue, 2);
+	if (GetUnrotatedClimbVelocity().Z < 10.f)return false;
+	
+	//先检测角色眼部往上偏移50高度往正前方100距离是否有碰撞
+	if (const FHitResult LedgeHit = TraceFromEyeHeight(100.f, 50.f); !LedgeHit.bBlockingHit)
+	{
+		//如果上前方没有碰撞，则由末端再折下检测是否有可行走的地面
+		const FVector WalkableSurfaceTraceStart = LedgeHit.TraceEnd;
+		const FVector DownVector = -UpdatedComponent->GetUpVector();
+		const FVector WalkableSurfaceTraceEnd = WalkableSurfaceTraceStart + DownVector * 100.f;
+
+		if (const FHitResult WalkableSurfaceHit = DoLineTraceSingleForObject(WalkableSurfaceTraceStart, WalkableSurfaceTraceEnd, true); WalkableSurfaceHit.bBlockingHit)
+		{
+			return true;
+		}
+	}
 	return false;
 }
 

@@ -27,7 +27,7 @@ class CLIMBINGSYSTEM_API UCustomMovementComponent : public UCharacterMovementCom
 #pragma region ClimbTraces
 	TArray<FHitResult> DoCapsuleTraceMultiForObjects(const FVector& Start, const FVector& End, bool bShowDebugShape = false, bool bDrawPersistantShapes = false) const;
 
-	FHitResult DoLineTraceMultiForObject(const FVector& Start, const FVector& End, bool bShowDebugShape = false, bool bDrawPersistantShapes = false) const;
+	FHitResult DoLineTraceSingleForObject(const FVector& Start, const FVector& End, bool bShowDebugShape = false, bool bDrawPersistantShapes = false) const;
 
 #pragma endregion
 
@@ -47,6 +47,10 @@ class CLIMBINGSYSTEM_API UCustomMovementComponent : public UCharacterMovementCom
 	void ProcessClimbableSurfaceInfo();
 
 	bool CheckShouldStopClimbing() const;
+	
+	bool CheckHasReachedFloor() const;
+	
+	bool CheckHasReachedLedge() const;
 
 	FQuat GetClimbRotation(float DeltaTime) const;
 
