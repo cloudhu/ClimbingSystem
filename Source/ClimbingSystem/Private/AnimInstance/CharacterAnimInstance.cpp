@@ -4,6 +4,7 @@
 #include "AnimInstance/CharacterAnimInstance.h"
 
 #include "ClimbingSystem/ClimbingSystemCharacter.h"
+#include "ClimbingSystem/DebugHelper.h"
 #include "Components/CustomMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 
@@ -55,6 +56,7 @@ void UCharacterAnimInstance::GetIsFalling()
 void UCharacterAnimInstance::GetIsClimbing()
 {
 	bIsClimbing = CustomMovementComponent->IsClimbing();
+	// DebugH::Print("bIsClimbing = ", bIsClimbing, FColor::Silver, 3);
 }
 
 void UCharacterAnimInstance::GetClimbVelocity()

@@ -10,6 +10,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "MotionWarpingComponent.h"
 #include "Components/CustomMovementComponent.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
@@ -28,7 +29,7 @@ AClimbingSystemCharacter::AClimbingSystemCharacter(const FObjectInitializer& Obj
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	CustomMovement = Cast<UCustomMovementComponent>(GetCharacterMovement());
+	CustomMovementComp = Cast<UCustomMovementComponent>(GetCharacterMovement());
 	// Configure character movement
 	GetCharacterMovement()->bOrientRotationToMovement = true; // Character moves in the direction of input...	
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f); // ...at this rotation rate
@@ -54,8 +55,43 @@ AClimbingSystemCharacter::AClimbingSystemCharacter(const FObjectInitializer& Obj
 	// Attach the camera to the end of the boom and let the boom adjust to match the controller orientation
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
+	MotionWarpingComp = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarpingComp"));
+
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
+}
+
+void AClimbingSystemCharacter::OnPlayerEnterClimbState()
+{
+	AddInputMappingContext(ClimbMappingContext, 1);
+}
+
+void AClimbingSystemCharacter::OnPlayerExitClimbState()
+{
+	RemoveInputMappingContext(ClimbMappingContext);
+}
+
+void AClimbingSystemCharacter::AddInputMappingContext(const UInputMappingContext* ContextToAdd, const int32 InPriority) const
+{
+	// Add Input Mapping Context
+	if (const APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
+		{
+			Subsystem->AddMappingContext(ContextToAdd, InPriority);
+		}
+	}
+}
+
+void AClimbingSystemCharacter::RemoveInputMappingContext(const UInputMappingContext* ContextRemove) const
+{
+	if (const APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
+		{
+			Subsystem->RemoveMappingContext(ContextRemove);
+		}
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -65,13 +101,12 @@ void AClimbingSystemCharacter::NotifyControllerChanged()
 {
 	Super::NotifyControllerChanged();
 
-	// Add Input Mapping Context
-	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	AddInputMappingContext(DefaultMappingContext, 0);
+
+	if (CustomMovementComp)
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-		{
-			Subsystem->AddMappingContext(DefaultMappingContext, 0);
-		}
+		CustomMovementComp->OnEnterClimbStateDelegate.BindUObject(this, &ThisClass::OnPlayerEnterClimbState);
+		CustomMovementComp->OnExitClimbStateDelegate.BindUObject(this, &ThisClass::OnPlayerExitClimbState);
 	}
 }
 
@@ -85,11 +120,16 @@ void AClimbingSystemCharacter::SetupPlayerInputComponent(UInputComponent* Player
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 
 		// Moving
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AClimbingSystemCharacter::Move);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AClimbingSystemCharacter::HandleGroundMoveInput);
+		EnhancedInputComponent->BindAction(ClimbMoveAction, ETriggerEvent::Triggered, this, &AClimbingSystemCharacter::HandleClimbMoveInput);
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AClimbingSystemCharacter::Look);
+
+		//Climb
 		EnhancedInputComponent->BindAction(ClimbAction, ETriggerEvent::Started, this, &AClimbingSystemCharacter::OnClimbStarted);
+		
+		EnhancedInputComponent->BindAction(ClimbHopAction, ETriggerEvent::Started, this, &AClimbingSystemCharacter::OnClimbHopStarted);
 	}
 	else
 	{
@@ -97,19 +137,6 @@ void AClimbingSystemCharacter::SetupPlayerInputComponent(UInputComponent* Player
 		       TEXT(
 			       "'%s' Failed to find an Enhanced Input component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."
 		       ), *GetNameSafe(this));
-	}
-}
-
-void AClimbingSystemCharacter::Move(const FInputActionValue& Value)
-{
-	if (!CustomMovement)return;
-	if (CustomMovement->IsClimbing())
-	{
-		HandleClimbMoveInput(Value);
-	}
-	else
-	{
-		HandleGroundMoveInput(Value);
 	}
 }
 
@@ -141,10 +168,10 @@ void AClimbingSystemCharacter::HandleClimbMoveInput(const FInputActionValue& Val
 	// input is a Vector2D
 	const FVector2D MovementVector = Value.Get<FVector2D>();
 
-	const FVector ForwardDirection=FVector::CrossProduct(-CustomMovement->GetClimbableSurfaceNormal(),GetActorRightVector());
+	const FVector ForwardDirection = FVector::CrossProduct(-CustomMovementComp->GetClimbableSurfaceNormal(), GetActorRightVector());
 
-	const FVector RightDirection=FVector::CrossProduct(-CustomMovement->GetClimbableSurfaceNormal(), -GetActorUpVector());
-	
+	const FVector RightDirection = FVector::CrossProduct(-CustomMovementComp->GetClimbableSurfaceNormal(), -GetActorUpVector());
+
 	// add movement 
 	AddMovementInput(ForwardDirection, MovementVector.Y);
 	AddMovementInput(RightDirection, MovementVector.X);
@@ -153,7 +180,7 @@ void AClimbingSystemCharacter::HandleClimbMoveInput(const FInputActionValue& Val
 void AClimbingSystemCharacter::Look(const FInputActionValue& Value)
 {
 	// input is a Vector2D
-	FVector2D LookAxisVector = Value.Get<FVector2D>();
+	const FVector2D LookAxisVector = Value.Get<FVector2D>();
 
 	if (Controller != nullptr)
 	{
@@ -165,6 +192,12 @@ void AClimbingSystemCharacter::Look(const FInputActionValue& Value)
 
 void AClimbingSystemCharacter::OnClimbStarted(const FInputActionValue& Value)
 {
-	if (!CustomMovement)return;
-	CustomMovement->ToggleClimbing(!CustomMovement->IsClimbing());
+	if (!CustomMovementComp)return;
+	CustomMovementComp->ToggleClimbing(!CustomMovementComp->IsClimbing());
+}
+
+void AClimbingSystemCharacter::OnClimbHopStarted(const FInputActionValue& Value)
+{
+	if (!CustomMovementComp)return;
+	CustomMovementComp->RequestHopping();
 }
